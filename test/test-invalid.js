@@ -50,7 +50,7 @@ var tests = {
 	},
 	"Bad E": {
 		json: "{\"test\":1.0e}",
-		character: 13,
+		character: 12,
 		line: 1
 	},
 	"Double E": {

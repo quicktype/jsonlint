@@ -8,6 +8,16 @@ var rnumber = /[0-9]/,
 	rE = /^(\-|\+)?[0-9]/;
 
 
+function isDigit(c) {
+	return rnumber.exec(c);
+}
+
+function matches(c, charOrPredicate) {
+	if (typeof charOrPredicate === "string")
+		return c === charOrPredicate;
+	return charOrPredicate(c);
+}
+
 // Leeeeeeerrrrroooyy Jennkkkiiinnnss
 function JSONLint( json, options ) {
 	var self = this;
@@ -362,65 +372,79 @@ JSONLint.prototype = {
 		}
 	},
 
+	atEnd: function() {
+		return this.i >= this.length;
+	},
+
+	errorIfAtEnd: function(eofErr) {
+		if (this.atEnd())
+			throw "Unexpected end - " + eofErr + ".";
+	},
+
+	lookahead: function(eofErr) {
+		this.errorIfAtEnd(eofErr);
+		return this.json[this.i];
+	},
+
+	lookingAt: function(c) {
+		return !this.atEnd() && matches(this.lookahead(), c);
+	},
+
+	advance: function(eofErr) {
+		this.c = this.lookahead(eofErr);
+		if (rnewline.exec(this.c)) {
+			this.line++;
+			this.character = 0;
+		} else {
+			this.i++;
+			this.character++;
+		}
+	},
+
+	consumeOne: function(c, err) {
+		this.errorIfAtEnd(err);
+		if (!this.lookingAt(c)) {
+			this.i--;
+			this.character--;	
+			throw "Invalid character '" + this.lookahead() + "' - " + err + ".";
+		}
+		this.advance();
+	},
+
+	consumeOptional: function(c) {
+		if (this.lookingAt(c)) {
+			this.advance();
+			return true;
+		}
+		return false;
+	},
+
+	consumeZeroOrMore: function(f) {
+		while (this.lookingAt(f))
+			this.advance();
+	},
+
+	consumeOneOrMore: function(f, err) {
+		this.consumeOne(f, err);
+		this.consumeZeroOrMore(f);
+	},
+
 	// Numeric Value
 	numeric: function(){
-		var self = this,
-			negative = true,
-			decimal = null,
-			e = null,
-			peek = '';
-
-		// We need to jump back a character to catch the whole number
-		self.i--;
-		self.character--;
-		for ( ; ++self.i < self.length; ) {
-			self.c = self.json[ self.i ];
-			self.character++;
-
-			// Handle initial negative sign
-			if ( negative ) {
-				negative = false;
-				if ( self.c == '-' ) {
-					if ( ! rnumber.exec( self.json[ self.i + 1 ] ) ) {
-						throw "Unknown Character '" + self.c + "' following a negative, expecting a numeric value.";
-					}
-					continue;
-				}
-			}
-
-			// Only a single decimal is allowed in a numeric value
-			if ( decimal && self.c == '.' ) {
-				decimal = false;
-				e = true;
-				continue;
-			}
-			// Only a single e notation is allowed in a numeric value
-			else if ( e && self.c.toLowerCase() == 'e' ) {
-				e = false;
-				negative = true;
-				if ( rE.exec( self.json.substr( self.i + 1, 2 ) ) ) {
-					self.character++;
-					self.i++;
-				}
-				else {
-					self.character++;
-					throw "Unknown Character '" + self.json[ self.i + 1 ] + "' following e notation, expecting a numeric value.";
-				}
-			}
-			// Normal Digit
-			else if ( rnumber.exec( self.c ) ) {
-				if ( decimal === null ) {
-					decimal = true;
-				}
-			}
-			// Assume end of number, and allow endval to handle it
-			else {
-				// Jump back a character to include the current one
-				self.i--;
-				self.character--;
-				return self.endval();
-			}
+		this.consumeOptional("-");
+		this.consumeOne(isDigit, "digit expected in number");
+		if (this.c !== "0")
+			this.consumeZeroOrMore(isDigit);
+		if (this.consumeOptional("."))
+			this.consumeOneOrMore(isDigit, "digit expected after decimal point");
+		if (this.consumeOptional(function (c) { return c === "e" || c === "E"; })) {
+			this.consumeOptional(function (c) { return c === "+" || c === "-"; });
+			this.consumeOneOrMore(isDigit, "digit expected in exponent");
 		}
+
+		this.i--;
+		this.character--;
+		return this.endval();
 	},
 
 	// Ending a value statement
