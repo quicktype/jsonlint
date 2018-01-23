@@ -6,10 +6,7 @@ all:
 clean:
 	@rm -rf build/results/
 
-lint:
-	@node build/lint.js
-
-test: clean lint
+test: clean
 	@node build/test.js
 
 test-all:
